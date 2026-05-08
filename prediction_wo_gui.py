@@ -1,15 +1,57 @@
 import math
 import cv2
-from cvzone.HandTrackingModule import HandDetector
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 import numpy as np
 from keras.models import load_model
 import traceback
 
-model = load_model('/cnn8grps_rad1_model.h5')
+model = load_model(r'C:\Users\mutentiza\Videos\Sign-Language-To-Text-and-Speech-Conversion\cnn8grps_rad1_model.h5')
 white = np.ones((400, 400), np.uint8) * 255
-cv2.imwrite("C:\\Users\\devansh raval\\PycharmProjects\\pythonProject\\white.jpg", white)
+cv2.imwrite(r"C:\Users\mutentiza\Videos\Sign-Language-To-Text-and-Speech-Conversion\white.jpg", white)
 
 capture = cv2.VideoCapture(0)
+
+class HandDetector:
+    def __init__(self, maxHands=1):
+        self.maxHands = maxHands
+        base_options = python.BaseOptions(model_asset_path=r'C:\Users\mutentiza\OneDrive\Documents\sign langiage model\hand_landmarker.task')
+        options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=self.maxHands)
+        self.landmarker = vision.HandLandmarker.create_from_options(options)
+
+    def findHands(self, img, draw=True, flipType=True):
+        if img is None or img.size == 0: return []
+        try:
+            rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_img)
+            result = self.landmarker.detect(mp_image)
+        except:
+            return []
+
+        allHands = []
+        h, w, c = img.shape
+        if result and result.hand_landmarks:
+            for hand_landmarks in result.hand_landmarks:
+                myHand = {}
+                mylmList = []
+                xList = []
+                yList = []
+                for lm in hand_landmarks:
+                    px, py = int(lm.x * w), int(lm.y * h)
+                    mylmList.append([px, py, lm.z])
+                    xList.append(px)
+                    yList.append(py)
+                
+                xmin, xmax = min(xList), max(xList)
+                ymin, ymax = min(yList), max(yList)
+                boxW, boxH = xmax - xmin, ymax - ymin
+                bbox = xmin, ymin, boxW, boxH
+                
+                myHand["lmList"] = mylmList
+                myHand["bbox"] = bbox
+                allHands.append(myHand)
+        return allHands
 
 hd = HandDetector(maxHands=1)
 hd2 = HandDetector(maxHands=1)
@@ -35,16 +77,17 @@ kok=[]
 
 while True:
     try:
-        _, frame = capture.read()
+        ret, frame = capture.read()
+        if not ret: break # End of video
         frame = cv2.flip(frame, 1)
         hands = hd.findHands(frame, draw=False, flipType=True)
-        print(frame.shape)
+        # print(frame.shape)
         if hands:
             # #print(" --------- lmlist=",hands[1])
             hand = hands[0]
             x, y, w, h = hand['bbox']
             image = frame[y - offset:y + h + offset, x - offset:x + w + offset]
-            white = cv2.imread("C:\\Users\\devansh raval\\PycharmProjects\\pythonProject\\white.jpg")
+            white = cv2.imread(r"C:\Users\mutentiza\Videos\Sign-Language-To-Text-and-Speech-Conversion\white.jpg")
             # img_final=img_final1=img_final2=0
             handz = hd2.findHands(image, draw=False, flipType=True)
             if handz:

@@ -1,0 +1,30 @@
+# ── Virtual Environments ──────────────────────────────────
+keras_env/
+usb_env/
+env/
+venv/
+.venv/
+
+# ── Python cache ──────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── Large media / dataset files ───────────────────────────
+AtoZ_3.1/
+*.mp4
+*.avi
+
+# NOTE: cnn8grps_rad1_model.h5 (13MB) and hand_landmarker.task (7.8MB)
+# ARE committed - they are under GitHub's 100MB file limit
+
+# ── IDE / OS ──────────────────────────────────────────────
+.idea/
+.vscode/
+*.suo
+.DS_Store
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────────────
+*.log
