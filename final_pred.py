@@ -7,6 +7,7 @@ import os, sys
 import traceback
 import pyttsx3
 import threading
+import queue
 import time
 from keras.models import load_model
 import mediapipe as mp
@@ -79,9 +80,14 @@ class Application:
         self.current_image = None
         self.model = load_model(MODEL_PATH)
         self.speak_engine=pyttsx3.init()
-        self.speak_engine.setProperty("rate",100)
+        self.speak_engine.setProperty("rate",150)
         voices=self.speak_engine.getProperty("voices")
-        self.speak_engine.setProperty("voice",voices[0].id)
+        if voices: self.speak_engine.setProperty("voice",voices[0].id)
+        
+        # Non-blocking Speech Queue
+        self.speech_queue = queue.Queue()
+        self.speech_thread = threading.Thread(target=self.speech_worker, daemon=True)
+        self.speech_thread.start()
 
         self.ct = {}
         self.ct['blank'] = 0
@@ -89,15 +95,12 @@ class Application:
         self.space_flag=False
         self.next_flag=True
         self.prev_char=""
-        self.count=-1
-        self.ten_prev_char=[]
-        for i in range(10):
-            self.ten_prev_char.append(" ")
-
+        self.count=0
+        self.ten_prev_char = [" " for _ in range(10)]
 
         for i in ascii_uppercase:
             self.ct[i] = 0
-        print("Loaded model from disk")
+        print("Loaded model from disk and started Speech Worker.")
 
 
         self.root = tk.Tk()
@@ -170,6 +173,23 @@ class Application:
         
         print("Starting Smooth Dashboard Loop...")
         self.video_loop()
+
+    def speech_worker(self):
+        """Dedicated thread for non-blocking speech synthesis."""
+        while True:
+            text = self.speech_queue.get()
+            if text:
+                try:
+                    self.speak_engine.say(text)
+                    self.speak_engine.runAndWait()
+                except:
+                    pass
+            self.speech_queue.task_done()
+            time.sleep(0.01)
+
+    def say(self, text):
+        """Add text to speech queue."""
+        self.speech_queue.put(text)
 
     def inference_worker(self):
         """Background thread to handle heavy model predictions without lagging the UI."""
@@ -298,8 +318,7 @@ class Application:
 
 
     def speak_fun(self):
-        self.speak_engine.say(self.str)
-        self.speak_engine.runAndWait()
+        self.say(self.str)
 
 
     def clear_fun(self):
@@ -701,43 +720,25 @@ class Application:
             if (self.pts[4][0] < self.pts[5][0]) and (self.pts[6][1] > self.pts[8][1] and self.pts[10][1] > self.pts[12][1] and self.pts[14][1] > self.pts[16][1] and self.pts[18][1] > self.pts[20][1]):
                 ch1="next"
 
-
-        # --- STABILITY COUNTER FOR FAST ADDING ---
-        if not hasattr(self, 'stability_count'):
-            self.stability_count = 0
-            self.last_stable_char = ""
-
-        if ch1 == self.last_stable_char and ch1 not in ["next", "Backspace", " ", "", None]:
-            self.stability_count += 1
-        else:
-            self.stability_count = 0
-            self.last_stable_char = ch1
-
-        # If held for 8 frames (~0.5s), auto-commit
-        if self.stability_count == 8:
-            if ch1 == "Backspace": 
+        # --- NEXT SIGN TRIGGER (COMMIT TO SENTENCE) ---
+        if ch1 == "next" and self.prev_char != "next":
+            # Pick the most frequent character in the last 10 frames for accuracy
+            valid_chars = [c for c in self.ten_prev_char if c not in ["next", "Backspace", " ", "", None]]
+            if valid_chars:
+                most_common = max(set(valid_chars), key=valid_chars.count)
+                self.str += most_common
+                self.say(most_common) # Immediate audio feedback for committed letter
+            elif self.ten_prev_char.count("Backspace") > 5:
                 self.str = self.str[:-1]
-                threading.Thread(target=lambda: (self.speak_engine.say("backspace"), self.speak_engine.runAndWait()), daemon=True).start()
-            else:
-                self.str += ch1
-                # Instant Voice for the letter
-                threading.Thread(target=lambda: (self.speak_engine.say(ch1), self.speak_engine.runAndWait()), daemon=True).start()
-            self.stability_count = 9 # Prevent double-adding
-
-        # Keep original "next" gesture logic as a manual backup
-        if ch1=="next" and self.prev_char!="next":
-            target = self.ten_prev_char[(self.count-2)%10]
-            if target == "Backspace": self.str = self.str[:-1]
-            elif target not in ["next", "Backspace", " ", ""]:
-                self.str += target
+                self.say("backspace")
 
         if ch1 == "  " and self.prev_char != "  ":
             self.str += " "
 
         self.prev_char = ch1
         self.current_symbol = ch1
+        self.ten_prev_char[self.count % 10] = ch1
         self.count += 1
-        self.ten_prev_char[self.count%10] = ch1
 
 
         if len(self.str.strip())!=0:
